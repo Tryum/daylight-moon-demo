@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daylight and Moon Phases</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Layout idea: a full-height 3D stage with a narrow instrument panel beside it (below it on phones). Single dark theme by choice: the subject is space. */
+  :root {
+    color-scheme: dark;
+    --space: #060a14;
+    --panel: #0d1322;
+    --line: #232c44;
+    --text: #e7eaf3;
+    --muted: #8f99b3;
+    --sun: #ffb84a;
+    --moon: #c6d2ea;
+    --font-display: "Bricolage Grotesque", "Trebuchet MS", sans-serif;
+    --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--space); color: var(--text);
+    font: 400 14px/1.45 var(--font-body);
+    font-variant-numeric: tabular-nums;
+  }
+  #app { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
+  #stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+  #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  #stage canvas:active { cursor: grabbing; }
+
+  .views {
+    position: absolute; top: 16px; left: 16px; display: flex; gap: 4px; flex-wrap: wrap;
+    padding: 4px; background: rgba(13, 19, 34, .82); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .views button {
+    font: 500 13px var(--font-body); color: var(--muted); background: none; border: 0;
+    padding: 7px 12px; border-radius: 7px; cursor: pointer;
+  }
+  .views button:hover { color: var(--text); }
+  .views button[aria-pressed="true"] { background: var(--sun); color: #1a1204; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--moon); outline-offset: 2px; }
+
+  #scrub {
+    position: absolute; left: 16px; right: 16px; bottom: 14px;
+    display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: center; gap: 12px;
+    padding: 9px 14px 7px; background: rgba(13, 19, 34, .86); border: 1px solid var(--line); border-radius: 10px;
+  }
+  #scrub output { font: 600 15px var(--font-display); color: var(--sun); }
+  #scrub .track { display: flex; flex-direction: column; gap: 3px; }
+  #scrub input { height: 22px; cursor: pointer; }
+  #scrub .months { display: grid; grid-template-columns: repeat(12, 1fr); font-size: 11px; color: var(--muted); }
+  #scrub .months span { border-left: 1px solid var(--line); padding-left: 4px; }
+  #inset {
+    position: absolute; right: 16px; bottom: 92px; width: 190px; height: 190px;
+    border: 1px solid var(--line); border-radius: 10px; pointer-events: none;
+  }
+  #inset span {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 5px 8px;
+    font-size: 12px; color: var(--muted); background: rgba(6, 10, 20, .7); border-radius: 0 0 9px 9px;
+  }
+  #hint { position: absolute; left: 16px; bottom: 92px; font-size: 12px; color: var(--muted); max-width: calc(100% - 240px); }
+
+  #panel {
+    background: var(--panel); border-left: 1px solid var(--line);
+    padding: 20px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px;
+  }
+  h1 { font: 600 22px/1.15 var(--font-display); margin: 0; text-wrap: balance; }
+  .sub { color: var(--muted); margin: 6px 0 0; font-size: 13px; }
+  section { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
+  h2 { font: 600 12px var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+  .big { font: 600 20px/1.2 var(--font-display); }
+  .big.sun { color: var(--sun); }
+  .big.moon { color: var(--moon); }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; text-align: right; }
+  label.row { display: grid; grid-template-columns: 62px 1fr 64px; align-items: center; gap: 10px; color: var(--muted); }
+  label.row output { color: var(--text); text-align: right; }
+  input[type=range] { width: 100%; accent-color: var(--sun); margin: 0; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .bar button, .bar select {
+    font: 500 13px var(--font-body); color: var(--text); background: #18203a;
+    border: 1px solid var(--line); border-radius: 7px; padding: 7px 12px; cursor: pointer;
+  }
+  .bar button:hover, .bar select:hover { border-color: var(--muted); }
+  #play { min-width: 78px; background: var(--sun); color: #1a1204; border-color: var(--sun); }
+  #chart { width: 100%; height: 96px; display: block; }
+  .note { color: var(--muted); font-size: 12px; margin: 0; }
+  #fail { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
+
+  @media (max-width: 780px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: 52% minmax(0, 1fr); }
+    #panel { border-left: 0; border-top: 1px solid var(--line); padding: 16px; }
+    #inset { width: 120px; height: 120px; right: 12px; bottom: 84px; }
+    #scrub { left: 12px; right: 12px; bottom: 10px; }
+    #hint { display: none; }
+    .views { top: 12px; left: 12px; right: 12px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="gl" aria-label="3D view of the Sun, Earth and Moon"></canvas>
+    <div class="views" role="group" aria-label="View">
+      <button id="v-orbit" aria-pressed="true">Orbit</button>
+      <button id="v-earth" aria-pressed="false">Earth</button>
+      <button id="v-moon" aria-pressed="false">Moon from Earth</button>
+    </div>
+    <div id="hint">Drag to rotate. Scroll to zoom.</div>
+    <div id="inset"><span id="insetLabel">Moon seen from Earth</span></div>
+    <div id="scrub">
+      <output id="doyOut" for="doy"></output>
+      <div class="track">
+        <input type="range" id="doy" min="0" max="364" step="1" aria-label="Date, one full orbit of the Earth">
+        <div class="months" aria-hidden="true"><span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span></div>
+      </div>
+    </div>
+    <div id="fail">This page needs WebGL and the three.js library, and one of them did not load.</div>
+  </div>
+
+  <aside id="panel">
+    <header>
+      <h1>Daylight and Moon Phases</h1>
+      <p class="sub">The Earth keeps its tilt as it circles the Sun, so the length of the day changes with the date and the latitude.</p>
+    </header>
+
+    <section>
+      <h2>Time</h2>
+      <div class="big" id="dateOut">–</div>
+      <label class="row" for="hour">Hour <input type="range" id="hour" min="0" max="23.75" step="0.25"><output id="hourOut"></output></label>
+      <div class="bar">
+        <button id="play">Pause</button>
+        <select id="speed" aria-label="Speed">
+          <option value="0.0416667">1 hour per second</option>
+          <option value="0.25">6 hours per second</option>
+          <option value="1" selected>1 day per second</option>
+          <option value="30">30 days per second</option>
+        </select>
+        <button id="now">Now</button>
+      </div>
+      <p class="note">Hours are solar time at the orange marker: the Sun is highest at 12:00.</p>
+    </section>
+
+    <section>
+      <h2>Daylight at the marker</h2>
+      <label class="row" for="lat">Latitude <input type="range" id="lat" min="-90" max="90" step="1" value="49"><output id="latOut"></output></label>
+      <div class="big sun" id="dayLen">–</div>
+      <dl class="kv">
+        <dt>Sunrise, sunset</dt><dd id="riseSet">–</dd>
+        <dt>Sun right now</dt><dd id="sunNow">–</dd>
+        <dt>Sun overhead at</dt><dd id="decl">–</dd>
+      </dl>
+      <canvas id="chart" width="608" height="192" aria-label="Day length through the year at this latitude"></canvas>
+    </section>
+
+    <section>
+      <h2>Moon</h2>
+      <div class="big moon" id="phase">–</div>
+      <dl class="kv">
+        <dt>Lit part of the disc</dt><dd id="illum">–</dd>
+        <dt>Days since new moon</dt><dd id="age">–</dd>
+        <dt>At the marker</dt><dd id="moonUp">–</dd>
+      </dl>
+    </section>
+
+    <p class="note">Sizes and distances are not to scale. Phases follow the average lunar cycle, so they can be about a day off the calendar. Eclipses and shadows are not drawn, and the Sun is hidden in the Moon view.</p>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  if (!window.THREE) { $('fail').style.display = 'grid'; return; }
+
+  // ---------- constants (model units, not to scale) ----------
+  const DAY = 864e5, TAU = Math.PI * 2, RAD = Math.PI / 180;
+  const TILT = 23.44 * RAD;
+  const R_ORBIT = 40, R_EARTH = 2, R_SUN = 4, R_MOON_ORBIT = 7, R_MOON = 0.6;
+  const MOON_INCL = 5.14 * RAD;
+  const SYNODIC = 29.530588853 * DAY;
+  const NEW_MOON_REF = Date.UTC(2000, 0, 6, 18, 14);
+  const MARKER_LON = 2.35 * RAD;
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  // ---------- state ----------
+  let simMs = Date.now();
+  let playing = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let speed = 1, acc = 0;
+  let lat = 49 * RAD;
+  let view = 'orbit';
+  const cams = {
+    orbit: { az: 0.5, el: 0.85, dist: 108, min: 30, max: 260 },
+    earth: { az: 55 * RAD, el: 0.28, dist: 11, min: 4.5, max: 40 }
+  };
+
+  // ---------- renderer and scene ----------
+  const canvas = $('gl'), stage = $('stage');
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true }); }
+  catch (e) { $('fail').style.display = 'grid'; return; }
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x060a14);
+  renderer.setScissorTest(true);
+
+  const scene = new THREE.Scene();
+  const mainCam = new THREE.PerspectiveCamera(45, 1, 0.1, 1500);
+  const moonCam = new THREE.PerspectiveCamera(26, 1, 0.1, 1500);
+  const topCam = new THREE.PerspectiveCamera(45, 1, 0.1, 1500);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.06));
+  scene.add(new THREE.PointLight(0xfff4e0, 1.35, 0, 0));
+
+  function rng(seed) {
+    return function () {
+      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+      let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  // stars
+  (function () {
+    const r = rng(7), pos = new Float32Array(1800 * 3);
+    for (let i = 0; i < 1800; i++) {
+      const u = r() * 2 - 1, a = r() * TAU, s = Math.sqrt(1 - u * u);
+      pos[i * 3] = 600 * s * Math.cos(a); pos[i * 3 + 1] = 600 * u; pos[i * 3 + 2] = 600 * s * Math.sin(a);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xaab4d0, size: 1.4, sizeAttenuation: false })));
+  })();
+
+  // sun
+  const sunGroup = new THREE.Group();
+  sunGroup.add(new THREE.Mesh(new THREE.SphereGeometry(R_SUN, 32, 16), new THREE.MeshBasicMaterial({ color: 0xffd27a })));
+  (function () {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const x = c.getContext('2d'), g = x.createRadialGradient(128, 128, 20, 128, 128, 128);
+    g.addColorStop(0, 'rgba(255,200,110,.9)'); g.addColorStop(.35, 'rgba(255,170,70,.28)'); g.addColorStop(1, 'rgba(255,150,50,0)');
+    x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), blending: THREE.AdditiveBlending, depthWrite: false }));
+    s.scale.set(26, 26, 1); sunGroup.add(s);
+  })();
+  scene.add(sunGroup);
+
+  // orbit line and season labels
+  const orbitStuff = new THREE.Group(), seasonLabels = [];
+  function ring(radius, yFn, color, opacity) {
+    const pts = [];
+    for (let i = 0; i < 256; i++) { const u = i / 256 * TAU; pts.push(new THREE.Vector3(radius * Math.cos(u), yFn ? yFn(u) : 0, -radius * Math.sin(u))); }
+    return new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+  }
+  orbitStuff.add(ring(R_ORBIT, null, 0x5b6a94, 0.7));
+  function label(text, color) {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 96;
+    const x = c.getContext('2d'); x.font = '500 44px "IBM Plex Sans", system-ui, sans-serif';
+    x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = color; x.fillText(text, 256, 48);
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthWrite: false, transparent: true }));
+    s.scale.set(21, 3.94, 1); return s;
+  }
+  [['March equinox', 0], ['June solstice', 0.25], ['September equinox', 0.5], ['December solstice', 0.75]].forEach(([t, f]) => {
+    const L = f * TAU, s = label(t, '#8f99b3');
+    s.position.set((R_ORBIT + 9) * Math.cos(L), 0, -(R_ORBIT + 9) * Math.sin(L));
+    orbitStuff.add(s); seasonLabels.push(s);
+    const tick = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 8), new THREE.MeshBasicMaterial({ color: 0x5b6a94 }));
+    tick.position.set(R_ORBIT * Math.cos(L), 0, -R_ORBIT * Math.sin(L)); orbitStuff.add(tick);
+  });
+  scene.add(orbitStuff);
+
+  // earth texture: rough continents in longitude, latitude
+  function earthTexture() {
+    const W = 2048, H = 1024, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d');
+    const sea = x.createLinearGradient(0, 0, 0, H);
+    sea.addColorStop(0, '#3b6f9c'); sea.addColorStop(.5, '#1c4f8f'); sea.addColorStop(1, '#3b6f9c');
+    x.fillStyle = sea; x.fillRect(0, 0, W, H);
+    const land = x.createLinearGradient(0, 0, 0, H);
+    [[0, '#e9eef2'], [.1, '#cfd6d2'], [.17, '#4f7446'], [.3, '#5f8a4a'], [.36, '#c2a56a'], [.42, '#a99a55'], [.5, '#2f7a3a'],
+     [.6, '#8f9a50'], [.66, '#b89d62'], [.75, '#5f8a4a'], [.85, '#7c8f6a'], [.9, '#e9eef2'], [1, '#f4f7fa']].forEach(s => land.addColorStop(s[0], s[1]));
+    const P = [
+      [[-168,66],[-156,71],[-125,70],[-95,72],[-80,73],[-64,60],[-55,52],[-66,44],[-75,35],[-81,25],[-90,30],[-97,26],[-97,18],[-88,16],[-83,9],[-78,8],[-85,12],[-95,16],[-105,20],[-110,24],[-115,31],[-124,40],[-124,48],[-135,58],[-150,60],[-165,55],[-160,60]],
+      [[-45,60],[-22,70],[-20,80],[-40,83],[-60,81],[-70,77],[-55,68]],
+      [[-78,8],[-72,12],[-60,9],[-50,0],[-35,-6],[-39,-15],[-48,-25],[-58,-38],[-65,-45],[-68,-54],[-74,-50],[-72,-35],[-70,-18],[-80,-5]],
+      [[-17,15],[-16,22],[-10,30],[-5,36],[10,37],[20,32],[32,31],[35,24],[43,12],[51,11],[41,-2],[40,-15],[35,-24],[27,-33],[19,-35],[14,-22],[12,-8],[9,4],[-5,5],[-12,8]],
+      [[-9,37],[-9,43],[-1,44],[-4,48],[2,51],[8,54],[8,57],[5,60],[12,65],[20,70],[30,71],[45,68],[60,70],[75,73],[105,77],[130,72],[160,70],[180,68],[180,65],[170,60],[160,52],[155,58],[142,54],[135,45],[128,38],[122,38],[121,30],[117,23],[108,20],[108,11],[104,9],[100,13],[99,7],[103,1],[98,9],[97,17],[91,22],[86,20],[80,14],[77,8],[73,18],[68,24],[60,25],[57,22],[52,16],[44,13],[39,21],[35,28],[36,36],[28,37],[26,40],[22,38],[19,42],[13,45],[16,40],[12,42],[8,44],[3,43],[0,39],[-5,36]],
+      [[-5,50],[1,51],[0,54],[-3,58],[-6,57],[-4,54]],
+      [[-24,65],[-14,66],[-15,63],[-22,63]],
+      [[114,-22],[122,-18],[131,-12],[137,-16],[142,-11],[146,-19],[153,-27],[150,-37],[140,-38],[131,-32],[116,-34]],
+      [[130,32],[136,35],[141,37],[142,43],[145,44],[141,45],[139,38],[133,35]],
+      [[44,-16],[50,-14],[47,-25],[44,-23]],
+      [[95,5],[104,-3],[106,-6],[101,-2]],
+      [[109,1],[117,6],[118,0],[114,-4],[110,-2]],
+      [[131,-1],[141,-3],[150,-9],[141,-9],[133,-4]],
+      [[173,-35],[178,-38],[174,-41],[171,-44],[167,-46],[170,-42]],
+      [[-180,-72],[-150,-76],[-100,-72],[-60,-74],[-58,-64],[-50,-76],[0,-70],[60,-67],[120,-66],[165,-71],[180,-72],[180,-90],[-180,-90]]
+    ];
+    x.fillStyle = land; x.lineJoin = 'round'; x.strokeStyle = land; x.lineWidth = 7;
+    P.forEach(poly => {
+      x.beginPath();
+      poly.forEach((p, i) => { const px = (p[0] + 180) / 360 * W, py = (90 - p[1]) / 180 * H; i ? x.lineTo(px, py) : x.moveTo(px, py); });
+      x.closePath(); x.fill(); x.stroke();
+    });
+    const ice = x.createLinearGradient(0, 0, 0, H * 0.1);
+    ice.addColorStop(0, 'rgba(240,245,250,.95)'); ice.addColorStop(1, 'rgba(240,245,250,0)');
+    x.fillStyle = ice; x.fillRect(0, 0, W, H * 0.1);
+    const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t;
+  }
+
+  // earth: tiltGroup holds the fixed axial tilt, earth spins inside it
+  const tiltGroup = new THREE.Group(); tiltGroup.rotation.x = TILT; scene.add(tiltGroup);
+  const earth = new THREE.Mesh(new THREE.SphereGeometry(R_EARTH, 64, 32), new THREE.MeshLambertMaterial({ map: earthTexture() }));
+  tiltGroup.add(earth);
+  tiltGroup.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, -R_EARTH * 1.55, 0), new THREE.Vector3(0, R_EARTH * 1.55, 0)]),
+    new THREE.LineBasicMaterial({ color: 0xe7eaf3 })));
+  const marker = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 8), new THREE.MeshBasicMaterial({ color: 0xff8a3c }));
+  earth.add(marker);
+  const latRing = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff8a3c }));
+  earth.add(latRing);
+  function placeMarker() {
+    const r = R_EARTH * 1.006, cl = Math.cos(lat), sl = Math.sin(lat), pts = [];
+    marker.position.set(r * cl * Math.cos(MARKER_LON), r * sl, -r * cl * Math.sin(MARKER_LON));
+    for (let i = 0; i < 128; i++) { const a = i / 128 * TAU; pts.push(new THREE.Vector3(r * cl * Math.cos(a), r * sl, -r * cl * Math.sin(a))); }
+    latRing.geometry.setFromPoints(pts);
+  }
+  placeMarker();
+
+  // moon
+  function moonTexture() {
+    const c = document.createElement('canvas'); c.width = 1024; c.height = 512;
+    const x = c.getContext('2d'), r = rng(42);
+    x.fillStyle = '#bdbcb6'; x.fillRect(0, 0, 1024, 512);
+    for (let i = 0; i < 26; i++) {
+      x.fillStyle = 'rgba(92,94,102,' + (0.25 + r() * 0.3) + ')';
+      x.beginPath(); x.ellipse(r() * 1024, 110 + r() * 290, 30 + r() * 90, 20 + r() * 55, r() * 3, 0, TAU); x.fill();
+    }
+    for (let i = 0; i < 260; i++) {
+      const px = r() * 1024, py = r() * 512, pr = 2 + r() * r() * 16;
+      x.fillStyle = 'rgba(70,70,76,.22)'; x.beginPath(); x.arc(px, py, pr, 0, TAU); x.fill();
+      x.strokeStyle = 'rgba(235,235,228,.35)'; x.lineWidth = 1.2; x.beginPath(); x.arc(px, py, pr, 0, TAU); x.stroke();
+    }
+    return new THREE.CanvasTexture(c);
+  }
+  const moon = new THREE.Mesh(new THREE.SphereGeometry(R_MOON, 48, 24), new THREE.MeshLambertMaterial({ map: moonTexture() }));
+  scene.add(moon);
+  const moonRing = ring(R_MOON_ORBIT, u => R_MOON_ORBIT * Math.sin(MOON_INCL) * Math.sin(u), 0x8b97b8, 0.55);
+  scene.add(moonRing);
+
+  // ---------- astronomy ----------
+  const earthPos = new THREE.Vector3(), sunDir = new THREE.Vector3(), moonDir = new THREE.Vector3();
+  const X_AXIS = new THREE.Vector3(1, 0, 0), tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3();
+  let sunLon = 0, elong = 0;
+
+  function parts(ms) {
+    const d = new Date(ms), y = d.getUTCFullYear();
+    const doy = Math.floor((Date.UTC(y, d.getUTCMonth(), d.getUTCDate()) - Date.UTC(y, 0, 1)) / DAY);
+    const hour = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
+    return { d, y, doy, hour };
+  }
+  function updateBodies() {
+    const p = parts(simMs);
+    sunLon = TAU * (simMs - Date.UTC(p.y, 2, 20, 12)) / (365.2422 * DAY);
+    earthPos.set(R_ORBIT * Math.cos(sunLon), 0, -R_ORBIT * Math.sin(sunLon));
+    sunDir.copy(earthPos).normalize().negate();
+    tiltGroup.position.copy(earthPos);
+    // spin so that the marker's meridian faces the Sun at 12:00
+    tmp.copy(sunDir).applyAxisAngle(X_AXIS, -TILT);
+    earth.rotation.y = Math.atan2(-tmp.z, tmp.x) + (p.hour - 12) / 24 * TAU - MARKER_LON;
+
+    let f = ((simMs - NEW_MOON_REF) / SYNODIC) % 1; if (f < 0) f += 1;
+    elong = f * TAU;
+    const u = sunLon + Math.PI + elong;
+    moonDir.set(Math.cos(u), Math.sin(MOON_INCL) * Math.sin(u), -Math.sin(u)).normalize();
+    moon.position.copy(earthPos).addScaledVector(moonDir, R_MOON_ORBIT);
+    moon.lookAt(earthPos);
+    moonRing.position.copy(earthPos);
+    return p;
+  }
+  function dayLength(doy, latRad) {
+    const L = TAU * (doy - 79.5) / 365.2422, decl = Math.asin(Math.sin(TILT) * Math.sin(L));
+    const la = Math.max(-89.9 * RAD, Math.min(89.9 * RAD, latRad));
+    const c = -Math.tan(la) * Math.tan(decl);
+    return c >= 1 ? 0 : c <= -1 ? 24 : 24 * Math.acos(c) / Math.PI;
+  }
+
+  // ---------- cameras ----------
+  function placeCameras() {
+    if (view === 'moon') {
+      mainCam.fov = 26; mainCam.position.copy(earthPos); mainCam.up.set(0, 1, 0); mainCam.lookAt(moon.position);
+    } else {
+      const c = cams[view], aspect = mainCam.aspect;
+      let az = c.az, dist = c.dist, target = tmp2.set(0, 0, 0);
+      if (view === 'earth') { az += Math.atan2(sunDir.x, sunDir.z); target = earthPos; }
+      else if (aspect < 1.1) dist *= 1.1 / aspect;
+      mainCam.fov = 45; mainCam.up.set(0, 1, 0);
+      mainCam.position.set(target.x + dist * Math.cos(c.el) * Math.sin(az), target.y + dist * Math.sin(c.el), target.z + dist * Math.cos(c.el) * Math.cos(az));
+      mainCam.lookAt(target);
+    }
+    mainCam.updateProjectionMatrix();
+    moonCam.position.copy(earthPos); moonCam.up.set(0, 1, 0); moonCam.lookAt(moon.position);
+    topCam.position.set(earthPos.x, 24, earthPos.z);
+    topCam.up.copy(sunDir); topCam.lookAt(earthPos); // Sun toward the top of the inset
+  }
+  function show(fromEarth) {
+    tiltGroup.visible = moonRing.visible = sunGroup.visible = orbitStuff.visible = !fromEarth;
+  }
+  function render() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setViewport(0, 0, w, h); renderer.setScissor(0, 0, w, h);
+    seasonLabels.forEach(s => { s.visible = view === 'orbit'; });
+    show(view === 'moon'); renderer.render(scene, mainCam);
+    const a = stage.getBoundingClientRect(), b = $('inset').getBoundingClientRect();
+    const ix = b.left - a.left + 1, iy = a.bottom - b.bottom + 1, iw = b.width - 2, ih = b.height - 2;
+    renderer.setViewport(ix, iy, iw, ih); renderer.setScissor(ix, iy, iw, ih);
+    if (view === 'moon') { show(false); orbitStuff.visible = false; renderer.render(scene, topCam); }
+    else { show(true); renderer.render(scene, moonCam); }
+  }
+  function resize() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    mainCam.aspect = w / h;
+  }
+  new ResizeObserver(resize).observe(stage); resize();
+
+  // ---------- panel ----------
+  const pad = n => String(n).padStart(2, '0');
+  const hm = h => { let m = Math.round(h * 60); if (m >= 1440) m -= 1440; return pad(Math.floor(m / 60)) + ':' + pad(m % 60); };
+  const latText = () => { const d = Math.round(lat / RAD); return d === 0 ? 'Equator' : Math.abs(d) + '°' + (d > 0 ? 'N' : 'S'); };
+  const chart = $('chart'), cx = chart.getContext('2d');
+
+  function drawChart(doy) {
+    const W = chart.width, H = chart.height, l = 58, r = 10, t = 14, b = 30;
+    const X = d => l + d / 365 * (W - l - r), Y = v => t + (1 - v / 24) * (H - t - b);
+    cx.clearRect(0, 0, W, H);
+    cx.font = '20px "IBM Plex Sans", system-ui, sans-serif'; cx.fillStyle = '#8f99b3'; cx.strokeStyle = '#232c44'; cx.lineWidth = 2;
+    cx.textAlign = 'right'; cx.textBaseline = 'middle';
+    [0, 12, 24].forEach(v => { cx.beginPath(); cx.moveTo(l, Y(v)); cx.lineTo(W - r, Y(v)); cx.stroke(); cx.fillText(v + ' h', l - 8, Y(v)); });
+    cx.textAlign = 'center'; cx.textBaseline = 'alphabetic';
+    [15, 105, 196, 288].forEach((d, i) => cx.fillText(['Jan', 'Apr', 'Jul', 'Oct'][i], X(d), H - 6));
+    cx.beginPath();
+    for (let d = 0; d <= 365; d += 2) { const y = Y(dayLength(d, lat)); d ? cx.lineTo(X(d), y) : cx.moveTo(X(d), y); }
+    cx.strokeStyle = '#ffb84a'; cx.lineWidth = 3; cx.stroke();
+    cx.lineTo(X(365), Y(0)); cx.lineTo(X(0), Y(0)); cx.closePath(); cx.fillStyle = 'rgba(255,184,74,.13)'; cx.fill();
+    const px = X(doy), py = Y(dayLength(doy, lat));
+    cx.strokeStyle = 'rgba(231,234,243,.45)'; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(px, t); cx.lineTo(px, H - b); cx.stroke();
+    cx.fillStyle = '#fff'; cx.beginPath(); cx.arc(px, py, 6, 0, TAU); cx.fill();
+  }
+
+  let lastKey = '';
+  function updatePanel(p) {
+    const key = p.doy + '|' + Math.floor(p.hour * 12) + '|' + lat + '|' + p.y;
+    if (key === lastKey) return; lastKey = key;
+    $('dateOut').textContent = p.d.getUTCDate() + ' ' + MONTHS[p.d.getUTCMonth()] + ' ' + p.y + ', ' + hm(p.hour);
+    $('doy').value = p.doy; $('doyOut').textContent = p.d.getUTCDate() + ' ' + MONTHS[p.d.getUTCMonth()];
+    $('hour').value = Math.floor(p.hour * 4) / 4; $('hourOut').textContent = hm(p.hour);
+    $('latOut').textContent = latText();
+
+    const len = dayLength(p.doy + p.hour / 24, lat), mins = Math.round(len * 60);
+    $('dayLen').textContent = len >= 24 ? 'Sun up all day' : len <= 0 ? 'Sun down all day' : Math.floor(mins / 60) + ' h ' + pad(mins % 60) + ' min of daylight';
+    $('riseSet').textContent = (len >= 24 || len <= 0) ? 'none' : hm(12 - len / 2) + ', ' + hm(12 + len / 2);
+    const decl = Math.asin(Math.sin(TILT) * Math.sin(sunLon)) / RAD;
+    $('decl').textContent = Math.abs(decl).toFixed(1) + '°' + (decl >= 0 ? 'N' : 'S');
+
+    // sun and moon height above the marker's horizon, measured in the 3D scene itself
+    scene.updateMatrixWorld();
+    const zen = marker.getWorldPosition(tmp).sub(earthPos).normalize();
+    const sunAlt = Math.asin(zen.dot(sunDir)) / RAD, moonAlt = Math.asin(zen.dot(moonDir)) / RAD;
+    $('sunNow').textContent = (sunAlt > 0 ? 'Day' : sunAlt > -6 ? 'Twilight' : 'Night') + ', ' + (sunAlt > 0 ? '' : '−') + Math.abs(sunAlt).toFixed(0) + '° ' + (sunAlt > 0 ? 'above' : 'below') + ' horizon';
+    $('moonUp').textContent = moonAlt > 0 ? 'Above the horizon' : 'Below the horizon';
+
+    const f = elong / TAU;
+    $('phase').textContent = (f < .02 || f > .98) ? 'New moon' : f < .23 ? 'Waxing crescent' : f < .27 ? 'First quarter' : f < .48 ? 'Waxing gibbous'
+      : f < .52 ? 'Full moon' : f < .73 ? 'Waning gibbous' : f < .77 ? 'Last quarter' : 'Waning crescent';
+    $('illum').textContent = Math.round((1 - Math.cos(elong)) / 2 * 100) + '%';
+    $('age').textContent = (f * 29.53).toFixed(1);
+    drawChart(p.doy + p.hour / 24);
+  }
+
+  // ---------- controls ----------
+  function setTime(doy, hour) {
+    const p = parts(simMs);
+    simMs = Date.UTC(p.y, 0, 1) + (doy == null ? p.doy : doy) * DAY + (hour == null ? p.hour : hour) * 36e5;
+  }
+  $('doy').addEventListener('input', e => setTime(+e.target.value, null));
+  $('hour').addEventListener('input', e => setTime(null, +e.target.value));
+  $('lat').addEventListener('input', e => { lat = +e.target.value * RAD; placeMarker(); });
+  $('speed').addEventListener('change', e => { speed = +e.target.value; acc = 0; });
+  $('now').addEventListener('click', () => { simMs = Date.now(); });
+  function setPlaying(v) { playing = v; $('play').textContent = v ? 'Pause' : 'Play'; }
+  $('play').addEventListener('click', () => setPlaying(!playing));
+  setPlaying(playing);
+
+  const labels = { orbit: 'Moon seen from Earth', earth: 'Moon seen from Earth', moon: 'Earth and Moon from above, Sun toward the top' };
+  function setView(v) {
+    view = v;
+    ['orbit', 'earth', 'moon'].forEach(k => $('v-' + k).setAttribute('aria-pressed', String(k === v)));
+    $('insetLabel').textContent = labels[v];
+    $('hint').textContent = v === 'moon' ? 'Looking from the centre of the Earth, north up.' : 'Drag to rotate. Scroll to zoom.';
+  }
+  ['orbit', 'earth', 'moon'].forEach(k => $('v-' + k).addEventListener('click', () => setView(k)));
+
+  let drag = null;
+  canvas.addEventListener('pointerdown', e => { if (view === 'moon') return; drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointermove', e => {
+    if (!drag || view === 'moon') return;
+    const c = cams[view];
+    c.az -= (e.clientX - drag.x) * 0.006;
+    c.el = Math.max(-1.45, Math.min(1.45, c.el + (e.clientY - drag.y) * 0.006));
+    drag.x = e.clientX; drag.y = e.clientY;
+  });
+  ['pointerup', 'pointercancel'].forEach(n => canvas.addEventListener(n, () => { drag = null; }));
+  canvas.addEventListener('wheel', e => {
+    if (view === 'moon') return; e.preventDefault();
+    const c = cams[view]; c.dist = Math.max(c.min, Math.min(c.max, c.dist * Math.exp(e.deltaY * 0.001)));
+  }, { passive: false });
+
+  // ---------- loop ----------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (playing) {
+      if (speed >= 5) { acc += dt * speed; const whole = Math.floor(acc); acc -= whole; simMs += whole * DAY; } // whole days: the hour stays put
+      else simMs += dt * speed * DAY;
+    }
+    const p = updateBodies();
+    placeCameras();
+    render();
+    updatePanel(p);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
